@@ -46,6 +46,10 @@ _BACKBONES = {
     "efficientnet_b3a": 'timm.create_model("efficientnet_b3a", pretrained=True)',
 }
 
+
+# def load(name):
+#     return eval(_BACKBONES[name])
+
 # TrungLQ update 11/03/2026
 # Overrides for torchvision>=0.13 'weights=...' API.
 # This lets you keep the legacy lines above as comments, while avoiding deprecation warnings.

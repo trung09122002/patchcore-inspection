@@ -7,6 +7,7 @@ import sys
 import click
 import numpy as np
 import torch
+from torchvision import transforms as tv_transforms
 
 import patchcore.common
 import patchcore.metrics
@@ -119,13 +120,31 @@ def run(methods, results_path, gpu, seed, save_segmentation_images):
                     x[3] for x in dataloaders["testing"].dataset.data_to_iterate
                 ]
 
+                def _get_norm_mean_std(dataset):
+                    # Older versions expected dataset.transform_mean/transform_std.
+                    if hasattr(dataset, "transform_mean") and hasattr(dataset, "transform_std"):
+                        return dataset.transform_mean, dataset.transform_std
+
+                    # Otherwise, try to infer from dataset.transform_img (Compose -> Normalize).
+                    try:
+                        t = dataset.transform_img
+                        seq = getattr(t, "transforms", None)
+                        if seq:
+                            for tr in seq:
+                                if isinstance(tr, tv_transforms.Normalize):
+                                    mean = list(tr.mean)
+                                    std = list(tr.std)
+                                    return mean, std
+                    except Exception:
+                        pass
+
+                    # Fallback: ImageNet normalization (used by MVTecDataset in this repo).
+                    return [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+
                 def image_transform(image):
-                    in_std = np.array(
-                        dataloaders["testing"].dataset.transform_std
-                    ).reshape(-1, 1, 1)
-                    in_mean = np.array(
-                        dataloaders["testing"].dataset.transform_mean
-                    ).reshape(-1, 1, 1)
+                    mean, std = _get_norm_mean_std(dataloaders["testing"].dataset)
+                    in_std = np.array(std).reshape(-1, 1, 1)
+                    in_mean = np.array(mean).reshape(-1, 1, 1)
                     image = dataloaders["testing"].dataset.transform_img(image)
                     return np.clip(
                         (image.numpy() * in_std + in_mean) * 255, 0, 255

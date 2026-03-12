@@ -21,6 +21,8 @@ def plot_segmentation_images(
     image_transform=lambda x: x,
     mask_transform=lambda x: x,
     save_depth=4,
+    save_components=True,
+    combined_subdir="combined",
 ):
     """Generate anomaly segmentation images.
 
@@ -32,6 +34,9 @@ def plot_segmentation_images(
         image_transform: [function or lambda] Optional transformation of images.
         mask_transform: [function or lambda] Optional transformation of masks.
         save_depth: [int] Number of path-strings to use for image savenames.
+        save_components: [bool] If True, also save individual components into
+            `savefolder/image/`, `savefolder/ground_truth/`, `savefolder/anomaly_map/`.
+        combined_subdir: [str] Subfolder name to store the composite (3-panel) images.
     """
     if mask_paths is None:
         mask_paths = ["-1" for _ in range(len(image_paths))]
@@ -40,6 +45,15 @@ def plot_segmentation_images(
         anomaly_scores = ["-1" for _ in range(len(image_paths))]
 
     os.makedirs(savefolder, exist_ok=True)
+    combined_dir = os.path.join(savefolder, combined_subdir) if combined_subdir else savefolder
+    os.makedirs(combined_dir, exist_ok=True)
+    if save_components:
+        image_dir = os.path.join(savefolder, "image")
+        gt_dir = os.path.join(savefolder, "ground_truth")
+        anomaly_dir = os.path.join(savefolder, "anomaly_map")
+        os.makedirs(image_dir, exist_ok=True)
+        os.makedirs(gt_dir, exist_ok=True)
+        os.makedirs(anomaly_dir, exist_ok=True)
 
     for image_path, mask_path, anomaly_score, segmentation in tqdm.tqdm(
         zip(image_paths, mask_paths, anomaly_scores, segmentations),
@@ -60,10 +74,13 @@ def plot_segmentation_images(
                     mask = mask.numpy()
             else:
                 mask = np.zeros_like(image)
+        else:
+            mask = np.zeros_like(image)
 
-        savename = image_path.split("/")
-        savename = "_".join(savename[-save_depth:])
-        savename = os.path.join(savefolder, savename)
+        filename = image_path.split("/")
+        filename = "_".join(filename[-save_depth:])
+        savename = os.path.join(combined_dir, filename)
+        base = os.path.splitext(filename)[0]
         f, axes = plt.subplots(1, 2 + int(masks_provided))
         axes[0].imshow(image.transpose(1, 2, 0))
         axes[1].imshow(mask.transpose(1, 2, 0))
@@ -72,6 +89,32 @@ def plot_segmentation_images(
         f.tight_layout()
         f.savefig(savename)
         plt.close()
+
+        if save_components:
+            img_hwc = image.transpose(1, 2, 0).astype(np.uint8)
+            PIL.Image.fromarray(img_hwc).save(os.path.join(image_dir, f"{base}.png"))
+
+            mask_hwc = mask.transpose(1, 2, 0)
+            # Masks are typically float in [0, 1]. Convert to visible uint8 [0, 255].
+            try:
+                maxv = float(np.max(mask_hwc))
+            except Exception:
+                maxv = 1.0
+            if maxv <= 1.0:
+                mask_hwc = mask_hwc * 255.0
+            mask_hwc = np.clip(mask_hwc, 0, 255).astype(np.uint8)
+            if mask_hwc.ndim == 3 and mask_hwc.shape[2] == 1:
+                mask_to_save = mask_hwc[:, :, 0]
+            else:
+                mask_to_save = mask_hwc
+            PIL.Image.fromarray(mask_to_save).save(os.path.join(gt_dir, f"{base}.png"))
+
+            seg = segmentation
+            if isinstance(seg, torch.Tensor):
+                seg = seg.detach().cpu().numpy()
+            if isinstance(seg, np.ndarray) and seg.ndim == 3:
+                seg = seg.squeeze()
+            plt.imsave(os.path.join(anomaly_dir, f"{base}.png"), seg, cmap="viridis")
 
 
 def create_storage_folder(

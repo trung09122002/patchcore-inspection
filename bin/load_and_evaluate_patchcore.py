@@ -125,7 +125,7 @@ def run(methods, results_path, gpu, seed, save_segmentation_images):
                     if hasattr(dataset, "transform_mean") and hasattr(dataset, "transform_std"):
                         return dataset.transform_mean, dataset.transform_std
 
-                    # Otherwise, try to infer from dataset.transform_img (Compose -> Normalize).
+                    # Otherwise, try to infer from dataset.transform_img (Compose -> Normalize -> ToTensor).
                     try:
                         t = dataset.transform_img
                         seq = getattr(t, "transforms", None)
